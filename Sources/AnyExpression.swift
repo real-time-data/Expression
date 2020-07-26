@@ -38,7 +38,8 @@ public struct AnyExpression: CustomStringConvertible {
     private let expression: Expression
     private let describer: () -> String
     private let evaluator: () throws -> Any
-
+    private let unsafeEvaluator: () throws -> Any
+    
     /// Evaluator for individual symbols
     public typealias SymbolEvaluator = (_ args: [Any]) throws -> Any
 
@@ -523,6 +524,14 @@ public struct AnyExpression: CustomStringConvertible {
         // and won't be re-stored, so must not be cleared
         let literals = box.values
 
+        unsafeEvaluator = {
+            defer {
+                box.values = literals
+            }
+            let value = try expression.evaluate()
+            return box.load(value)
+        }
+        
         // Evaluation isn't thread-safe due to shared values
         // so we use NSLock to prevent re-entrance
         let lock = NSLock()
@@ -538,6 +547,12 @@ public struct AnyExpression: CustomStringConvertible {
         self.expression = expression
     }
 
+    /// Non-threadsafe evaluator.  Intended for classes which create building blocks which also must manage
+    /// thread-safety.
+    public func evaluateUnsafe() throws -> Any {
+        return try unsafeEvaluator()
+    }
+    
     /// Evaluate the expression
     public func evaluate<T>() throws -> T {
         let anyValue = try evaluator()
